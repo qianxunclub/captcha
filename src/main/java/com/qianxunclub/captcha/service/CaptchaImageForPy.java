@@ -1,7 +1,6 @@
 package com.qianxunclub.captcha.service;
 
 import com.qianxunclub.captcha.config.Config;
-
 import org.apache.commons.lang.StringUtils;
 import org.apache.tomcat.util.http.fileupload.IOUtils;
 import org.springframework.stereotype.Component;
@@ -32,10 +31,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class CaptchaImageForPy {
 
-
-    public static String check(String base64String) {
+    public String check(String base64String) {
         String filename = UUID.randomUUID() + ".jpg";
-        File folder = new File( "temp");
+        File folder = new File("temp");
         if (!folder.exists()) {
             folder.mkdirs();
         }
@@ -45,13 +43,24 @@ public class CaptchaImageForPy {
             byte[] data = decoder.decodeBuffer(base64String);
             IOUtils.copy(new ByteArrayInputStream(data), new FileOutputStream(file));
             Runtime runtime = Runtime.getRuntime();
-            Process process = runtime.exec(Config.PYTHON_PATH + "/run.sh " + "../temp/" + filename);
+            String os = System.getProperty("os.name");
+            Process process;
+            if (os.toLowerCase().startsWith("win")) {
+                String[] cmd = new String[]{"cmd", "/c", " cd python  &  set PYTHONIOENCODING=utf-8 & python main.py " + "..\\temp\\" + filename};
+                process = runtime.exec(cmd);
+            } else {
+                String bash = Config.PYTHON_PATH + "/run.sh ../temp/" + filename;
+                process = runtime.exec(bash);
+            }
             InputStream inputStream = process.getInputStream();
             InputStreamReader inputStreamReader = new InputStreamReader(inputStream, "utf-8");
             BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
-            String line = null;
+            String line;
             PredictVO predictVO = new PredictVO();
             while ((line = bufferedReader.readLine()) != null) {
+                if (StringUtils.isEmpty(line.trim())) {
+                    continue;
+                }
                 String[] parts = line.split("\\s");
                 if (parts.length == 1) {
                     predictVO.getQuestions().add(parts[0]);
@@ -60,16 +69,18 @@ public class CaptchaImageForPy {
                     predictVO.getPictures().add(pictureVO);
                 }
             }
-            return CaptchaImageForPy.getResult(predictVO);
+            return this.getResult(predictVO);
         } catch (Exception e) {
-            log.error("",e);
+            log.error("", e);
             return "系统出错，联系QQ：960339491";
         } finally {
-            file.deleteOnExit();
+            if (file.exists() && file.isFile()) {
+                file.delete();
+            }
         }
     }
 
-    private static String getResult(PredictVO predictVO) {
+    private String getResult(PredictVO predictVO) {
         final int[][][] offset = {
                 {
                         {40, 77},
@@ -97,18 +108,20 @@ public class CaptchaImageForPy {
         }
         return StringUtils.join(integerList, ",");
     }
+
+    @Data
+    public static class PredictVO {
+        private List<String> questions = new ArrayList<>();
+        private List<PictureVO> pictures = new ArrayList<>();
+    }
+
+    @Data
+    @AllArgsConstructor
+    public static class PictureVO {
+        private Integer x;
+        private Integer y;
+        private String desc;
+    }
 }
 
-@Data
-class PredictVO {
-    private List<String> questions = new ArrayList<>();
-    private List<PictureVO> pictures = new ArrayList<>();
-}
 
-@Data
-@AllArgsConstructor
-class PictureVO {
-    private Integer x;
-    private Integer y;
-    private String desc;
-}
